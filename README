@@ -1,14 +1,14 @@
-# p0f v3 + JSON
+## p0f v3 + JSON
 
-*See docs/README for original readme of p0f v3.
+*See docs/README for original readme of p0f v3.*
 
-This fork integrates p0f [http://lcamtuf.coredump.cx/p0f3/] with json-c/json-c, enabling to stream JSON-serialized data via the UNIX socket.
+This fork integrates p0f v3 [http://lcamtuf.coredump.cx/p0f3/] with JSON-C [https://github.com/json-c/json-c], enabling to stream JSON-serialized data via the UNIX socket.
 
 In addition, more fields are exposed through JSON, such as raw TCP and HTTP signatures and a number of TCP metrics.
 
 Use new command line argument "-j" to enable JSON output.
 
-## Sample output (formatted):
+### Sample output (formatted):
 ```
 {
   "magic":1345340930,
@@ -48,6 +48,6 @@ Use new command line argument "-j" to enable JSON output.
     "dist":0
   },
   "tcp_raw_sig":"4:64+0:0:1460:mss*10,3:mss,nop,nop,sok,nop,ws:df:0",
-  "http_raw_sig":"1:Host,Connection=[keep-alive],Accept=[*\/*],User-Agent,Accept-Encoding=[gzip,deflate,sdch],Accept-Language=[en-US,en;q=0.8],Accept-Charset=[ISO-8859-1,utf-8;q=0.7,*;q=0.3]:Keep-Alive:Mozilla\/5.0 (Windows NT 6.1; WOW64) AppleWebKit\/537.11 (KHTML, like Gecko) Chrome\/23.0.1271.95 Safari\/537.11"
+  "http_raw_sig":"1:Host,Connection=[keep-alive],Accept=[*\/*],User-Agent,Accept-Encoding=[gzip,deflate,sdch],..."
 }
 ```
