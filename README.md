@@ -6,7 +6,7 @@ This fork integrates p0f v3 [http://lcamtuf.coredump.cx/p0f3/] with JSON-C [http
 
 In addition, more fields are exposed through JSON, such as raw TCP and HTTP signatures and a number of TCP metrics.
 
-Use new command line argument "-j" to enable JSON output.
+Use new command line argument `"-j"` to enable JSON output.
 
 ### Sample output (formatted):
 ```
