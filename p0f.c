@@ -102,6 +102,8 @@ u32 hash_seed;                          /* Hash seed                          */
 
 static u8 obs_fields;                   /* No of pending observation fields   */
 
+u8 json_output;                         /* Output in JSON?                    */
+
 /* Memory allocator data: */
 
 #ifdef DEBUG_BUILD
@@ -133,6 +135,7 @@ static void usage(void) {
 #ifndef __CYGWIN__
 "  -s name   - answer to API queries at a named unix socket\n"
 #endif /* !__CYGWIN__ */
+"  -j        - use JSON for output into the unix socket\n"
 "  -u user   - switch to the specified unprivileged account and chroot\n"
 "  -d        - fork into background (requires -o or -s)\n"
 "\n"
@@ -836,9 +839,16 @@ poll_again:
           if (ctable[cur]->in_off < sizeof(struct p0f_api_query))
             FATAL("Inconsistent p0f_api_response state.\n");
 
-          i = write(pfds[cur].fd, 
-                   ((char*)&ctable[cur]->out_data) + ctable[cur]->out_off,
-                   sizeof(struct p0f_api_response) - ctable[cur]->out_off);
+          if (!json_output) {
+            i = write(pfds[cur].fd,
+                     ((char*)&ctable[cur]->out_data) + ctable[cur]->out_off,
+                     sizeof(struct p0f_api_response) - ctable[cur]->out_off);
+          }
+          else {
+            i = write(pfds[cur].fd,
+                     ctable[cur]->json_out_data + ctable[cur]->out_off,
+                     strlen((char*)ctable[cur]->json_out_data) - ctable[cur]->out_off);
+          }
 
           if (i <= 0) PFATAL("write() on API socket fails despite POLLOUT.");
 
@@ -846,13 +856,22 @@ poll_again:
 
           /* All done? Back to square zero then! */
 
-          if (ctable[cur]->out_off == sizeof(struct p0f_api_response)) {
+          if (!json_output && ctable[cur]->out_off == sizeof(struct p0f_api_response)) {
 
-             ctable[cur]->in_off = ctable[cur]->out_off = 0;
-             pfds[cur].events   = (POLLIN | POLLERR | POLLHUP);
+            ctable[cur]->in_off = ctable[cur]->out_off = 0;
+            pfds[cur].events   = (POLLIN | POLLERR | POLLHUP);
 
           }
+          else if (json_output && ctable[cur]->out_off ==
+                   strlen((char*)ctable[cur]->json_out_data)) {
 
+            if (ctable[cur]->json_out_data) {
+              free(ctable[cur]->json_out_data);
+            }
+            ctable[cur]->in_off = ctable[cur]->out_off = 0;
+            pfds[cur].events   = (POLLIN | POLLERR | POLLHUP);
+
+          }
       }
 
       if (pfds[cur].revents & POLLIN) switch (cur) {
@@ -921,7 +940,13 @@ poll_again:
 
           if (ctable[cur]->in_off == sizeof(struct p0f_api_query)) {
 
-            handle_query(&ctable[cur]->in_data, &ctable[cur]->out_data);
+            if (!json_output) {
+              handle_query(&ctable[cur]->in_data, &ctable[cur]->out_data);
+            }
+            else {
+              handle_json_query(&ctable[cur]->in_data, (char**)&ctable[cur]->json_out_data);
+              DEBUG("JSON response: %s\n", ctable[cur]->json_out_data);
+            }
             pfds[cur].events = (POLLOUT | POLLERR | POLLHUP);
 
           }
@@ -1022,7 +1047,7 @@ int main(int argc, char** argv) {
   if (getuid() != geteuid())
     FATAL("Please don't make me setuid. See README for more.\n");
 
-  while ((r = getopt(argc, argv, "+LS:df:i:m:o:pr:s:t:u:")) != -1) switch (r) {
+  while ((r = getopt(argc, argv, "+LS:df:i:m:o:pr:s:t:u:j")) != -1) switch (r) {
 
     case 'L':
 
@@ -1149,6 +1174,14 @@ int main(int argc, char** argv) {
 
       switch_user = (u8*)optarg;
 
+      break;
+
+    case 'j':
+
+      if (json_output)
+        FATAL("Multiple -j options not supported.");
+
+      json_output = 1;
       break;
 
     default: usage();
