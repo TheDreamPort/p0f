@@ -3,9 +3,9 @@
    -------------------------------------------------------------
 
    Copyright (C) 2012 by Michal Zalewski <lcamtuf@coredump.cx>
+   UPdated 7 June 2020 MISI
 
    Distributed under the terms and conditions of GNU LGPL.
-
  */
 
 #define _GNU_SOURCE
@@ -167,62 +167,61 @@ static void usage(void) {
 
 static void get_hash_seed(void) {
 
-  s32 f = open("/dev/urandom", O_RDONLY);
+    s32 f = open("/dev/urandom", O_RDONLY);
 
-  if (f < 0) PFATAL("Cannot open /dev/urandom for reading.");
+    if (f < 0) PFATAL("Cannot open /dev/urandom for reading.");
 
-#ifndef DEBUG_BUILD
+    #ifndef DEBUG_BUILD
 
-  /* In debug versions, use a constant seed. */
+    /* In debug versions, use a constant seed. */
 
-  if (read(f, &hash_seed, sizeof(hash_seed)) != sizeof(hash_seed))
-    FATAL("Cannot read data from /dev/urandom.");
+    if (read(f, &hash_seed, sizeof(hash_seed)) != sizeof(hash_seed))
+        FATAL("Cannot read data from /dev/urandom.");
 
-#endif /* !DEBUG_BUILD */
+    #endif /* !DEBUG_BUILD */
 
-  close(f);
+    close(f);
 
-}
+ }
 
 
 /* Get rid of unnecessary file descriptors */
 
 static void close_spare_fds(void) {
 
-  s32 i, closed = 0;
-  DIR* d;
-  struct dirent* de;
+    s32 i, closed = 0;
+    DIR* d;
+    struct dirent* de;
 
-  d = opendir("/proc/self/fd");
+    d = opendir("/proc/self/fd");
 
-  if (!d) {
-    /* Best we could do... */
-    for (i = 3; i < 256; i++) 
-      if (!close(i)) closed++;
-    return;
-  }
+    if ( !d ) {
+        /* Best we could do... */
+        for (i = 3; i < 256; i++) 
+        if (!close(i)) closed++;
+        return;
+    }
 
-  while ((de = readdir(d))) {
-    i = atol(de->d_name);
-    if (i > 2 && !close(i)) closed++;
-  }
+    while ((de = readdir(d))) {
+        i = atol(de->d_name);
+        if (i > 2 && !close(i)) closed++;
+    }
 
-  closedir(d);
+    closedir(d);
 
-  if (closed)
-    SAYF("[+] Closed %u file descriptor%s.\n", closed, closed == 1 ? "" : "s" );
+    if (closed)
+        SAYF("[+] Closed %u file descriptor%s.\n", closed, closed == 1 ? "" : "s" );
 
 }
 
 
 /* Create or open log file */
 
-static void open_log(void) {
-
+static void open_log( void ) {
   struct stat st;
   s32 log_fd;
 
-  log_fd = open((char*)log_file, O_WRONLY | O_APPEND | O_NOFOLLOW | O_LARGEFILE);
+  log_fd = open( (char*)log_file, O_WRONLY | O_APPEND | O_NOFOLLOW | O_LARGEFILE );
 
   if (log_fd >= 0) {
 
