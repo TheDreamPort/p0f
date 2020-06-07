@@ -9,7 +9,16 @@
 #
 
 PROGNAME="p0f"
-VERSION="3.06b"
+VERSION="3.06c"
+
+# https://stackoverflow.com/questions/1298066/check-if-an-apt-get-package-is-installed-and-then-install-it-if-its-not-on-linu
+REQUIRED_PKG="libjson-c-dev libpcap-dev pkg-config"
+PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG | grep "install ok installed")
+echo Checking for $REQUIRED_PKG: $PKG_OK
+if [ "" = "$PKG_OK" ]; then
+  echo "No $REQUIRED_PKG. Setting up $REQUIRED_PKG."
+  sudo apt-get --yes install $REQUIRED_PKG 
+fi
 
 test "$CC" = "" && CC="gcc"
 
@@ -89,13 +98,11 @@ elif [ "$1" = "all" -o "$1" = "" ]; then
   USE_CFLAGS="$USE_CFLAGS -O3"
 
 elif [ "$1" = "debug" ]; then
-
   echo "[+] Configuring debug build."
   BASIC_CFLAGS="$BASIC_CFLAGS -DDEBUG_BUILD=1"
   USE_CFLAGS="$USE_CFLAGS -DDEBUG_BUILD=1"
 
 else
-
   echo "[-] Unrecognized build target '$1', sorry."
   exit 1
 
@@ -212,7 +219,6 @@ if [ ! -x "$TMP" ]; then
   echo
   cat "$TMP.log"
   echo
-  echo "Sorry! You may want to ping <lcamtuf@coredump.cx> about this."
   echo
   rm -f "$TMP.log"
   exit 1
@@ -309,7 +315,6 @@ if [ ! -x "$TMP" ]; then
   fi
 
   USE_CFLAGS="$USE_CFLAGS -DNET_BPF=1"
-
 fi
 
 echo "OK"
@@ -331,8 +336,6 @@ if [ ! -x "$PROGNAME" ]; then
   echo "Well, something went horribly wrong, sorry. Here's the output from GCC:"
   echo
   cat "$TMP.log"
-  echo
-  echo "Sorry! You may want to ping <lcamtuf@coredump.cx> about this."
   echo
   rm -f "$TMP.log"
   exit 1

@@ -12,6 +12,7 @@
 #define _HAVE_FP_HTTP_H
 
 #include "types.h"
+#include <json.h>
 
 /* A structure used for looking up various headers internally in fp_http.c: */
 

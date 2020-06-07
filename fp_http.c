@@ -844,135 +844,116 @@ header_check:
 /* Look up HTTP signature, create an observation. */
 
 static void fingerprint_http(u8 to_srv, struct packet_flow* f) {
+    struct http_sig_record* m;
+    u8* lang = NULL;
+    u8* raw_sig;
+    json_object *obj = NULL;
 
-  struct http_sig_record* m;
-  u8* lang = NULL;
-  u8* raw_sig;
+    http_find_match( to_srv, &f->http_tmp, 0 );
 
-  http_find_match(to_srv, &f->http_tmp, 0);
+    obj = start_observation( to_srv ? "http request" : "http response", 4, to_srv, f );
 
-  start_observation(to_srv ? "http request" : "http response", 4, to_srv, f);
-
-  if ((m = f->http_tmp.matched)) {
-
-    OBSERVF((m->class_id < 0) ? "app" : "os", "%s%s%s",
-            fp_os_names[m->name_id], m->flavor ? " " : "",
-            m->flavor ? m->flavor : (u8*)"");
-
-  } else add_observation_field("app", NULL);
-
-  if (f->http_tmp.lang && isalpha(f->http_tmp.lang[0]) &&
-      isalpha(f->http_tmp.lang[1]) && !isalpha(f->http_tmp.lang[2])) {
-
-    u8 lh = LANG_HASH(f->http_tmp.lang[0], f->http_tmp.lang[1]);
-    u8 pos = 0;
-
-    while (languages[lh][pos]) {
-      if (f->http_tmp.lang[0] == languages[lh][pos][0] &&
-          f->http_tmp.lang[1] == languages[lh][pos][1]) break;
-      pos += 2;
+    if ((m = f->http_tmp.matched)) {
+        OBSERVF( obj, (m->class_id < 0) ? "app" : "os", "%s%s%s", fp_os_names[m->name_id], m->flavor ? " " : "", m->flavor ? m->flavor : (u8*)"");
+    }else { 
+        add_observation_field( obj, "app", NULL ) ;
     }
 
-    if (!languages[lh][pos]) add_observation_field("lang", NULL);
-      else add_observation_field("lang", 
-           (lang = (u8*)languages[lh][pos + 1]));
+    if ( f->http_tmp.lang && isalpha(f->http_tmp.lang[0]) && isalpha(f->http_tmp.lang[1]) && !isalpha(f->http_tmp.lang[2])) {
+        u8 lh = LANG_HASH(f->http_tmp.lang[0], f->http_tmp.lang[1]);
+        u8 pos = 0;
 
-  } else add_observation_field("lang", (u8*)"none");
+        while ( languages[lh][pos] ) {
+            if (f->http_tmp.lang[0] == languages[lh][pos][0] && f->http_tmp.lang[1] == languages[lh][pos][1]) break;
+            pos += 2;
+        }
 
-  add_observation_field("params", dump_flags(&f->http_tmp, m));
+        if ( !languages[lh][pos] ) {
+            add_observation_field( obj, "lang", NULL );
+        }else {
+            add_observation_field( obj, "lang", (lang = (u8*)languages[lh][pos + 1]) );
+        }
+    }else {
+        add_observation_field( obj, "lang", (u8*)"none" );
+    }
 
-  raw_sig = dump_sig(to_srv, &f->http_tmp);
-  add_observation_field("raw_sig", raw_sig);
+    add_observation_field(obj, "params", dump_flags(&f->http_tmp, m) );
 
-  if (to_srv) {
-    f->client->http_raw_sig = raw_sig;
-  } else {
-    f->server->http_raw_sig = raw_sig;
-  }
+    raw_sig = dump_sig(to_srv, &f->http_tmp);
+    add_observation_field( obj, "raw_sig", raw_sig );
 
-  score_nat(to_srv, f);
+    if ( to_srv ) {
+        f->client->http_raw_sig = raw_sig;
+    } else {
+        f->server->http_raw_sig = raw_sig;
+    }
+
+    score_nat( to_srv, f );
 
   /* Save observations needed to score future responses. */
+    if ( !to_srv ) {
+        /* For server response, always store the signature. */
+        ck_free( f->server->http_resp );
+        f->server->http_resp = ck_memdup( &f->http_tmp, sizeof(struct http_sig) );
 
-  if (!to_srv) {
+        f->server->http_resp->hdr_cnt = 0;
+        f->server->http_resp->sw   = NULL;
+        f->server->http_resp->lang = NULL;
+        f->server->http_resp->via  = NULL;
 
-    /* For server response, always store the signature. */
+        f->server->http_resp_port = f->srv_port;
 
-    ck_free(f->server->http_resp);
-    f->server->http_resp = ck_memdup(&f->http_tmp, sizeof(struct http_sig));
+        if (lang) f->server->language = lang;
 
-    f->server->http_resp->hdr_cnt = 0;
-    f->server->http_resp->sw   = NULL;
-    f->server->http_resp->lang = NULL;
-    f->server->http_resp->via  = NULL;
+        if ( m ) {
+            if ( m->class_id != -1 ) {
 
-    f->server->http_resp_port = f->srv_port;
+                /* If this is an OS signature, update host record. */
+                f->server->last_class_id = m->class_id;
+                f->server->last_name_id  = m->name_id;
+                f->server->last_flavor   = m->flavor;
+                f->server->last_quality  = (m->generic * P0F_MATCH_GENERIC);
+            } else {
+                /* Otherwise, record app data. */
+                f->server->http_name_id = m->name_id;
+                f->server->http_flavor  = m->flavor;
 
-    if (lang) f->server->language = lang;
+                if (f->http_tmp.dishonest) f->server->bad_sw = 2;
+            }
+        }
+    } else {
+        if ( lang ) {
+            f->client->language = lang;
+        }
+        if ( m ) {
+            if ( m->class_id != -1 ) {
+                /* Client request - only OS sig is of any note. */
+                ck_free(f->client->http_req_os);
+                f->client->http_req_os = ck_memdup(&f->http_tmp,
+                sizeof(struct http_sig));
 
-    if (m) {
+                f->client->http_req_os->hdr_cnt = 0;
+                f->client->http_req_os->sw   = NULL;
+                f->client->http_req_os->lang = NULL;
+                f->client->http_req_os->via  = NULL;
 
-      if (m->class_id != -1) {
+                f->client->last_class_id = m->class_id;
+                f->client->last_name_id  = m->name_id;
+                f->client->last_flavor   = m->flavor;
 
-        /* If this is an OS signature, update host record. */
+                f->client->last_quality  = (m->generic * P0F_MATCH_GENERIC);
+            } else {
+                /* Record app data for the API. */
 
-        f->server->last_class_id = m->class_id;
-        f->server->last_name_id  = m->name_id;
-        f->server->last_flavor   = m->flavor;
-        f->server->last_quality  = (m->generic * P0F_MATCH_GENERIC);
+                f->client->http_name_id = m->name_id;
+                f->client->http_flavor  = m->flavor;
 
-      } else {
-
-        /* Otherwise, record app data. */
-
-        f->server->http_name_id = m->name_id;
-        f->server->http_flavor  = m->flavor;
-
-        if (f->http_tmp.dishonest) f->server->bad_sw = 2;
-
-      }
-
+                if (f->http_tmp.dishonest) {
+                    f->client->bad_sw = 2;
+                }
+            }
+        }
     }
-
-  } else {
-
-    if (lang) f->client->language = lang;
-
-    if (m) {
-
-      if (m->class_id != -1) {
-
-        /* Client request - only OS sig is of any note. */
-
-        ck_free(f->client->http_req_os);
-        f->client->http_req_os = ck_memdup(&f->http_tmp,
-          sizeof(struct http_sig));
-
-        f->client->http_req_os->hdr_cnt = 0;
-        f->client->http_req_os->sw   = NULL;
-        f->client->http_req_os->lang = NULL;
-        f->client->http_req_os->via  = NULL;
-
-        f->client->last_class_id = m->class_id;
-        f->client->last_name_id  = m->name_id;
-        f->client->last_flavor   = m->flavor;
-
-        f->client->last_quality  = (m->generic * P0F_MATCH_GENERIC);
-
-      } else {
-
-        /* Record app data for the API. */
-
-        f->client->http_name_id = m->name_id;
-        f->client->http_flavor  = m->flavor;
-
-        if (f->http_tmp.dishonest) f->client->bad_sw = 2;
-
-      }
- 
-    }
-
-  }
 
 }
 

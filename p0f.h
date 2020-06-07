@@ -11,6 +11,7 @@
 #ifndef _HAVE_P0F_H
 #define _HAVE_P0F_H
 
+#include <json.h>
 #include "types.h"
 #include "process.h"
 
@@ -18,15 +19,14 @@ extern u8  daemon_mode;
 extern s32 link_type;
 extern u32 max_conn, max_hosts, conn_max_age, host_idle_limit, hash_seed;
 
-void start_observation(char* keyword, u8 field_cnt, u8 to_srv,
-                       struct packet_flow* pf);
+json_object* start_observation( char* keyword, u8 field_cnt, u8 to_srv, struct packet_flow* pf );
 
-void add_observation_field(char* key, u8* value);
+void add_observation_field( json_object* obj, char* key, u8* value );
 
-#define OBSERVF(_key, _fmt...) do { \
+#define OBSERVF( _obj, _key, _fmt...) do { \
     u8* _val; \
     _val = alloc_printf(_fmt); \
-    add_observation_field(_key, _val); \
+    add_observation_field( _obj, _key, _val); \
     ck_free(_val); \
   } while (0)
 

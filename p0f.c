@@ -309,84 +309,108 @@ static void open_api(void) {
 
 /* Open log entry. */
 
-void start_observation(char* keyword, u8 field_cnt, u8 to_srv,
-                       struct packet_flow* f) {
+json_object* start_observation( char* keyword, u8 field_cnt, u8 to_srv, struct packet_flow* f ) {
+    json_object *new_json_object = NULL;
+    if ( obs_fields ) {
+        FATAL("Premature end of observation.");
+    }
 
-  if (obs_fields) FATAL("Premature end of observation.");
+    if ( !daemon_mode ) {
+        SAYF(".-[ %s/%u -> ", addr_to_str(f->client->addr, f->client->ip_ver), f->cli_port);
+        SAYF("%s/%u (%s) ]-\n|\n", addr_to_str(f->server->addr, f->client->ip_ver), f->srv_port, keyword);
 
-  if (!daemon_mode) {
+        SAYF("| %-8s = %s/%u\n", to_srv ? "client" : "server", addr_to_str(to_srv ? f->client->addr : f->server->addr, f->client->ip_ver), to_srv ? f->cli_port : f->srv_port);
+    }
 
-    SAYF(".-[ %s/%u -> ", addr_to_str(f->client->addr, f->client->ip_ver),
-         f->cli_port);
-    SAYF("%s/%u (%s) ]-\n|\n", addr_to_str(f->server->addr, f->client->ip_ver),
-         f->srv_port, keyword);
+    if ( log_file ) {
+        u8 tmp[64]    = {0};
 
-    SAYF("| %-8s = %s/%u\n", to_srv ? "client" : "server", 
-         addr_to_str(to_srv ? f->client->addr :
-         f->server->addr, f->client->ip_ver),
-         to_srv ? f->cli_port : f->srv_port);
+        time_t ut     = get_unix_time();
+        struct tm* lt = localtime(&ut);
 
-  }
+        strftime( (char*)tmp, 64, "%Y/%m/%d %H:%M:%S", lt) ;
 
-  if (log_file) {
+        if ( !json_output ) {
+            LOGF("[%s] mod=%s|cli=%s/%u|",tmp, keyword, addr_to_str(f->client->addr, f->client->ip_ver), f->cli_port);
+            LOGF("srv=%s/%u|subj=%s", addr_to_str(f->server->addr, f->server->ip_ver), f->srv_port, to_srv ? "cli" : "srv");
+        }else {
+            new_json_object          = json_object_new_object();
+            
+            json_object *timestamp   = json_object_new_string((char*)tmp);
+            json_object *client      = json_object_new_string( (const char *)addr_to_str(f->client->addr, f->client->ip_ver));
+            json_object *client_port = json_object_new_int( f->cli_port );
+            json_object *server      = json_object_new_string( (const char *)addr_to_str(f->server->addr, f->server->ip_ver));
+            json_object *server_port = json_object_new_int( f->srv_port );
+            json_object *subject     = json_object_new_string( to_srv ? "cli" : "srv" );
 
-    u8 tmp[64];
-
-    time_t ut = get_unix_time();
-    struct tm* lt = localtime(&ut);
-
-    strftime((char*)tmp, 64, "%Y/%m/%d %H:%M:%S", lt);
-
-    LOGF("[%s] mod=%s|cli=%s/%u|",tmp, keyword, addr_to_str(f->client->addr,
-         f->client->ip_ver), f->cli_port);
-
-    LOGF("srv=%s/%u|subj=%s", addr_to_str(f->server->addr, f->server->ip_ver),
-         f->srv_port, to_srv ? "cli" : "srv");
-
-  }
-
-  obs_fields = field_cnt;
-
+            json_object_object_add( new_json_object, "timestamp", timestamp );
+            json_object_object_add( new_json_object, "client", client );
+            json_object_object_add( new_json_object, "client_port", client_port );
+            json_object_object_add( new_json_object, "server", server );
+            json_object_object_add( new_json_object, "server_port", server_port );
+            json_object_object_add( new_json_object, "subject", subject );
+        }
+    }
+    obs_fields = field_cnt;
+    return new_json_object;
 }
 
 
 /* Add log item. */
 
-void add_observation_field(char* key, u8* value) {
+void add_observation_field( json_object* obj, char* key, u8* value ) {
+    json_object *new_json_object   = NULL;
+    if ( !obs_fields ) {
+        FATAL("Unexpected observation field ('%s').", key);
+    }
 
-  if (!obs_fields) FATAL("Unexpected observation field ('%s').", key);
+    if ( !daemon_mode ) {
+        SAYF("| %-8s = %s\n", key, value ? value : (u8*)"???");
+    }
 
-  if (!daemon_mode)
-    SAYF("| %-8s = %s\n", key, value ? value : (u8*)"???");
+    if ( log_file ) {
+        if ( !json_output ) {
+            LOGF("|%s=%s", key, value ? value : (u8*)"???");
+        }else {
+            if ( value != NULL ) {
+                new_json_object = json_object_new_string( (const char *)value );
+            }else{
+                new_json_object = json_object_new_string( "UNKNOWN" );
+            }
+            json_object_object_add( obj, key, new_json_object );
+        }
+    }
 
-  if (log_file) LOGF("|%s=%s", key, value ? value : (u8*)"???");
+    obs_fields--;
 
-  obs_fields--;
+    if ( !obs_fields ) {
+        if ( !daemon_mode ) {
+            SAYF( "|\n`----\n\n" );
+        }
 
-  if (!obs_fields) {
-
-    if (!daemon_mode) SAYF("|\n`----\n\n");
-
-    if (log_file) LOGF("\n");
-
-  }
-
+        if ( log_file ) {
+            if ( !json_output ) {
+                LOGF( "\n" );
+            }else {
+                LOGF( json_object_to_json_string(obj) );
+                LOGF( "\n");
+                json_object_put( obj );
+            }
+        }
+    }
 }
 
-
 /* Show PCAP interface list */
-
-static void list_interfaces(void) {
-
+static void list_interfaces( void ) {
   char pcap_err[PCAP_ERRBUF_SIZE];
   pcap_if_t *dev;
   u8 i = 0;
 
-  /* There is a bug in several years' worth of libpcap releases that causes it
-     to SEGV here if /sys/class/net is not readable. See http://goo.gl/nEnGx */
-
-  if (access("/sys/class/net", R_OK | X_OK) && errno != ENOENT)
-    FATAL("This operation requires access to /sys/class/net/, sorry.");
+    /* There is a bug in several years' worth of libpcap releases that causes it
+       to SEGV here if /sys/class/net is not readable. See http://goo.gl/nEnGx */
+    if (access("/sys/class/net", R_OK | X_OK) && errno != ENOENT) {
+        FATAL("This operation requires access to /sys/class/net/, sorry.");
+    }
 
   if (pcap_findalldevs(&dev, pcap_err) == -1)
     FATAL("pcap_findalldevs: %s\n", pcap_err);
@@ -396,7 +420,6 @@ static void list_interfaces(void) {
   SAYF("\n-- Available interfaces --\n");
 
   do {
-
     pcap_addr_t *a = dev->addresses;
 
     SAYF("\n%3d: Name        : %s\n", i++, dev->name);
@@ -707,27 +730,22 @@ static void fork_off(void) {
 
     setsid();
 
-  } else {
-
-    SAYF("[+] Daemon process created, PID %u (stderr %s).\n", npid,
-      isatty(2) ? "not kept" : "kept as-is");
-
+  }else {
+    SAYF("[+] Daemon process created, PID %u (stderr %s).\n", npid,  isatty(2) ? "not kept" : "kept as-is");
     SAYF("\nGood luck, you're on your own now!\n");
-
-    exit(0);
-
+    exit( EXIT_SUCCESS );
   }
-
 }
 
 
 /* Handler for Ctrl-C and related signals */
 
-static void abort_handler(int sig) {
-  if (stop_soon) exit(1);
-  stop_soon = 1;
+static void abort_handler( int sig ) {
+    if ( stop_soon ) {
+        exit(1);
+    }
+    stop_soon = 1;
 }
-
 
 #ifndef __CYGWIN__
 
@@ -833,21 +851,16 @@ poll_again:
           FATAL("Unexpected POLLOUT on fd %d.\n", cur);
 
         default:
-
           /* Write API response, restart state when complete. */
 
-          if (ctable[cur]->in_off < sizeof(struct p0f_api_query))
+          if (ctable[cur]->in_off < sizeof(struct p0f_api_query)) {
             FATAL("Inconsistent p0f_api_response state.\n");
-
-          if (!json_output) {
-            i = write(pfds[cur].fd,
-                     ((char*)&ctable[cur]->out_data) + ctable[cur]->out_off,
-                     sizeof(struct p0f_api_response) - ctable[cur]->out_off);
           }
-          else {
-            i = write(pfds[cur].fd,
-                     ctable[cur]->json_out_data + ctable[cur]->out_off,
-                     strlen((char*)ctable[cur]->json_out_data) - ctable[cur]->out_off);
+
+          if ( !json_output ) {
+            i = write(pfds[cur].fd, ((char*)&ctable[cur]->out_data) + ctable[cur]->out_off, sizeof(struct p0f_api_response) - ctable[cur]->out_off);
+          }else {
+            i = write(pfds[cur].fd, ctable[cur]->json_out_data + ctable[cur]->out_off, strlen((char*)ctable[cur]->json_out_data) - ctable[cur]->out_off);
           }
 
           if (i <= 0) PFATAL("write() on API socket fails despite POLLOUT.");
@@ -857,14 +870,9 @@ poll_again:
           /* All done? Back to square zero then! */
 
           if (!json_output && ctable[cur]->out_off == sizeof(struct p0f_api_response)) {
-
             ctable[cur]->in_off = ctable[cur]->out_off = 0;
             pfds[cur].events   = (POLLIN | POLLERR | POLLHUP);
-
-          }
-          else if (json_output && ctable[cur]->out_off ==
-                   strlen((char*)ctable[cur]->json_out_data)) {
-
+          }else if (json_output && ctable[cur]->out_off == strlen((char*)ctable[cur]->json_out_data)) {
             ck_free(ctable[cur]->json_out_data);
             ctable[cur]->in_off = ctable[cur]->out_off = 0;
             pfds[cur].events   = (POLLIN | POLLERR | POLLHUP);
@@ -898,11 +906,8 @@ poll_again:
             api_cl[i].fd = accept(api_fd, NULL, NULL);
 
             if (api_cl[i].fd < 0) {
-
               WARN("Unable to handle API connection: accept() fails.");
-
-            } else {
-
+            }else {
               if (fcntl(api_cl[i].fd, F_SETFL, O_NONBLOCK))
                 PFATAL("fcntl() to set O_NONBLOCK on API connection fails.");
 
@@ -912,7 +917,6 @@ poll_again:
               DEBUG("[#] Accepted new API connection, fd %d.\n", api_cl[i].fd);
 
               goto poll_again;
-
             }
 
           } else WARN("Too many API connections (use -S to adjust).\n");
@@ -1034,18 +1038,15 @@ static void offline_event_loop(void) {
 
 /* Main entry point */
 
-int main(int argc, char** argv) {
-
+int main( int argc, char** argv ) {
   s32 r;
 
-  setlinebuf(stdout);
-
-  SAYF("--- p0f " VERSION " by Michal Zalewski <lcamtuf@coredump.cx> ---\n\n");
+  setlinebuf (stdout );
 
   if (getuid() != geteuid())
     FATAL("Please don't make me setuid. See README for more.\n");
 
-  while ((r = getopt(argc, argv, "+LS:df:i:m:o:pr:s:t:u:j")) != -1) switch (r) {
+  while ( (r = getopt(argc, argv, "+LS:df:i:m:o:pr:s:t:u:j")) != -1 ) switch (r) {
 
     case 'L':
 

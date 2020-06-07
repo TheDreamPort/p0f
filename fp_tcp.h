@@ -12,6 +12,7 @@
 #define _HAVE_FP_TCP_H
 
 #include "types.h"
+#include <json.h>
 
 /* Simplified data for signature matching and NAT detection: */
 

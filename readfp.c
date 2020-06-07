@@ -57,7 +57,6 @@ static u32 class_cnt,                   /* Sizes for maps                     */
 /* Parse 'classes' parameter by populating fp_os_classes. */
 
 static void config_parse_classes(u8* val) {
-
   while (*val) {
 
     u8* nxt;
@@ -76,7 +75,6 @@ static void config_parse_classes(u8* val) {
     fp_os_classes[class_cnt++] = DFL_ck_memdup_str(val, nxt - val);
 
     val = nxt;
-
   }
 
 }
@@ -109,7 +107,6 @@ u32 lookup_name_id(u8* name, u8 len) {
 /* Parse 'label' parameter by looking up ID and recording name / flavor. */
 
 static void config_parse_label(u8* val) {
-
   u8* nxt;
   u32 i;
 

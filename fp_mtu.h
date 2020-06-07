@@ -12,14 +12,13 @@
 #define _HAVE_FP_MTU_H
 
 #include "types.h"
+#include <json.h>
 
 /* Record for a TCP signature read from p0f.fp: */
 
 struct mtu_sig_record {
-
   u8* name;
   u16 mtu;
-
 };
 
 #include "process.h"

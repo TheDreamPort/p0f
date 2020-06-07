@@ -1394,63 +1394,59 @@ static void flow_dispatch(struct packet_data* pk) {
 
 /* Add NAT score, check if alarm due. */
 
-void add_nat_score(u8 to_srv, struct packet_flow* f, u16 reason, u8 score) {
+void add_nat_score( u8 to_srv, struct packet_flow* f, u16 reason, u8 score ) {
+    static u8 rea[1024] = {0};
+    json_object *obj    = NULL;
 
-  static u8 rea[1024];
+    struct host_data* hd;
+    u8 *scores, *rptr = rea;
+    u32 i;
+    u8  over_5 = 0, over_2 = 0, over_1 = 0, over_0 = 0;
 
-  struct host_data* hd;
-  u8 *scores, *rptr = rea;
-  u32 i;
-  u8  over_5 = 0, over_2 = 0, over_1 = 0, over_0 = 0;
+    if ( to_srv ) {
+        hd = f->client;
+        scores = hd->cli_scores;
+    }else {
+        hd = f->server;
+        scores = hd->srv_scores;
+    }
 
-  if (to_srv) {
+    memmove(scores, scores + 1, NAT_SCORES - 1);
+    scores[NAT_SCORES - 1] = score;
+    hd->nat_reasons |= reason;
 
-    hd = f->client;
-    scores = hd->cli_scores;
+    if ( !score ) {
+        return;
+    }
+    
+    for (i = 0; i < NAT_SCORES; i++) switch (scores[i]) {
+        case 6 ... 255: over_5++;
+        case 3 ... 5:   over_2++;
+        case 2:         over_1++;
+        case 1:         over_0++;
+    }
 
-  } else {
+    if ( over_5 > 2 || over_2 > 4 || over_1 > 6 || over_0 > 8 ) {
+        obj = start_observation("ip sharing", 2, to_srv, f);
 
-    hd = f->server;
-    scores = hd->srv_scores;
+        reason = hd->nat_reasons;
 
-  }
+        hd->last_nat = get_unix_time();
 
-  memmove(scores, scores + 1, NAT_SCORES - 1);
-  scores[NAT_SCORES - 1] = score;
-  hd->nat_reasons |= reason;
+        memset(scores, 0, NAT_SCORES);
+        hd->nat_reasons = 0;
+    }else {
+        /* Wait for something more substantial. */
+        if ( score == 1 ) {
+            return;
+        }
 
-  if (!score) return;
+        obj = start_observation( "host change", 2, to_srv, f );
 
-  for (i = 0; i < NAT_SCORES; i++) switch (scores[i]) {
-    case 6 ... 255: over_5++;
-    case 3 ... 5:   over_2++;
-    case 2:         over_1++;
-    case 1:         over_0++;
-  }
+        hd->last_chg = get_unix_time();
+    }
 
-  if (over_5 > 2 || over_2 > 4 || over_1 > 6 || over_0 > 8) {
-
-    start_observation("ip sharing", 2, to_srv, f);
-
-    reason = hd->nat_reasons;
-
-    hd->last_nat = get_unix_time();
-
-    memset(scores, 0, NAT_SCORES);
-    hd->nat_reasons = 0;
-
-  } else {
-
-    /* Wait for something more substantial. */
-    if (score == 1) return;
-
-    start_observation("host change", 2, to_srv, f);
-
-    hd->last_chg = get_unix_time();
-
-  }
-
-  *rptr = 0;
+    *rptr = 0;
 
 #define REAF(_par...) do { \
     rptr += sprintf((char*)rptr, _par); \
@@ -1470,20 +1466,17 @@ void add_nat_score(u8 to_srv, struct packet_flow* f, u16 reason, u8 score) {
   if (reason & NAT_APP_DATE) REAF(" date");
   if (reason & NAT_APP_LB)   REAF(" srv_sig_lb");
   if (reason & NAT_APP_UA)   REAF(" ua_vs_os");
-
 #undef REAF
 
-  add_observation_field("reason", rea[0] ? (rea + 1) : NULL);
+    add_observation_field( obj, "reason", rea[0] ? (rea + 1) : NULL );
 
-  OBSERVF("raw_hits", "%u,%u,%u,%u", over_5, over_2, over_1, over_0);
-
+    OBSERVF( obj, "raw_hits", "%u,%u,%u,%u", over_5, over_2, over_1, over_0 );
 }
 
 
 /* Verify if tool class (called from modules). */
 
-void verify_tool_class(u8 to_srv, struct packet_flow* f, u32* sys, u32 sys_cnt) {
-
+void verify_tool_class( u8 to_srv, struct packet_flow* f, u32* sys, u32 sys_cnt ) {
   struct host_data* hd;
   u32 i;
 
@@ -1511,26 +1504,25 @@ void verify_tool_class(u8 to_srv, struct packet_flow* f, u32* sys, u32 sys_cnt) 
 
   /* Oops, a mismatch. */
 
-  if (i == sys_cnt) {
+    if (i == sys_cnt) {
+        DEBUG("[#] Detected app not supposed to run on host OS.\n");
+        add_nat_score(to_srv, f, NAT_APP_SIG, 4);
+    } else {
+        DEBUG("[#] Detected app supported on host OS.\n");
+        add_nat_score(to_srv, f, 0, 0);
 
-    DEBUG("[#] Detected app not supposed to run on host OS.\n");
-    add_nat_score(to_srv, f, NAT_APP_SIG, 4);
-
-  } else {
-
-    DEBUG("[#] Detected app supported on host OS.\n");
-    add_nat_score(to_srv, f, 0, 0);
-
-  }
-
+    }
 }
 
 
 /* Clean up everything. */
 
-void destroy_all_hosts(void) {
+void destroy_all_hosts( void ) {
+    while ( flow_by_age ) {
+        destroy_flow(flow_by_age);
+    }
 
-  while (flow_by_age) destroy_flow(flow_by_age);
-  while (host_by_age) destroy_host(host_by_age);
-
+    while ( host_by_age ) {
+        destroy_host(host_by_age);
+    }
 }

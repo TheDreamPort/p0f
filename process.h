@@ -14,13 +14,13 @@
 #include <pcap.h>
 
 #include "types.h"
+#include <json.h>
 #include "fp_tcp.h"
 #include "fp_http.h"
 
 /* Parsed information handed over by the pcap callback: */
 
 struct packet_data {
-
   u8  ip_ver;                           /* IP_VER4, IP_VER6                   */
   u8  tcp_type;                         /* TCP_SYN, ACK, FIN, RST             */
 
